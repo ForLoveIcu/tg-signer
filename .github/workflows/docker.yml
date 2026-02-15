@@ -1,0 +1,66 @@
+name: Build and Push Docker Image
+
+on:
+  push:
+    tags:
+      - '*'
+  workflow_dispatch:
+
+jobs:
+  docker:
+    runs-on: ubuntu-latest
+    # Wait for PyPI publish to complete first
+    # (the package is installed from PyPI in the Dockerfile)
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ secrets.DOCKERHUB_USERNAME }}/tg-signer
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest
+
+      - name: Wait for PyPI package availability
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          VERSION="${TAG#v}"
+          echo "Waiting for tg-signer==${VERSION} on PyPI..."
+          for i in $(seq 1 30); do
+            if pip index versions tg-signer 2>/dev/null | grep -q "${VERSION}"; then
+              echo "Package version ${VERSION} is available on PyPI"
+              exit 0
+            fi
+            echo "Attempt $i/30: not yet available, waiting 30s..."
+            sleep 30
+          done
+          echo "Warning: Timed out waiting for PyPI, proceeding anyway..."
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: ./docker
+          file: ./docker/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
