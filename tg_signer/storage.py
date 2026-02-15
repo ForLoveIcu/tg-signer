@@ -9,7 +9,6 @@ Requires: DATABASE_URL environment variable (PostgreSQL connection string).
 Optional: SYNC_INTERVAL (seconds between periodic syncs, default 60).
 """
 
-import asyncio
 import hashlib
 import logging
 import os
@@ -67,7 +66,7 @@ def _collect_files(base_dirs: list[Path]) -> dict[str, bytes]:
         if not base.exists():
             continue
         for pattern in SYNC_PATTERNS:
-            for fpath in base.rglob(pattern.lstrip("**/")):
+            for fpath in base.rglob(pattern.removeprefix("**/")):
                 if not fpath.is_file():
                     continue
                 if not _should_sync(fpath):
