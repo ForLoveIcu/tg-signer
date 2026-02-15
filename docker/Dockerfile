@@ -19,7 +19,7 @@ RUN apt-get update && \
 
 COPY . /src
 RUN pip install /tmp/*.whl && \
-    pip install "/src[speedup]" && \
+    pip install "/src[speedup,db]" && \
     rm -rf /src
 
 WORKDIR /opt/tg-signer
