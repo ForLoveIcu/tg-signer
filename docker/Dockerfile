@@ -17,7 +17,9 @@ RUN apt-get update && \
     echo ${TZ} > /etc/timezone && \
     rm -rf /var/lib/apt/lists/*
 
+COPY . /src
 RUN pip install /tmp/*.whl && \
-    pip install -U "tg-signer[tgcrypto]"
+    pip install "/src[speedup]" && \
+    rm -rf /src
 
 WORKDIR /opt/tg-signer

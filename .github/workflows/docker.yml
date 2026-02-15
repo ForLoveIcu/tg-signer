@@ -9,8 +9,6 @@ on:
 jobs:
   docker:
     runs-on: ubuntu-latest
-    # Wait for PyPI publish to complete first
-    # (the package is installed from PyPI in the Dockerfile)
 
     steps:
       - name: Checkout repository
@@ -38,25 +36,10 @@ jobs:
             type=semver,pattern={{major}}.{{minor}}
             type=raw,value=latest
 
-      - name: Wait for PyPI package availability
-        run: |
-          TAG="${GITHUB_REF#refs/tags/}"
-          VERSION="${TAG#v}"
-          echo "Waiting for tg-signer==${VERSION} on PyPI..."
-          for i in $(seq 1 30); do
-            if pip index versions tg-signer 2>/dev/null | grep -q "${VERSION}"; then
-              echo "Package version ${VERSION} is available on PyPI"
-              exit 0
-            fi
-            echo "Attempt $i/30: not yet available, waiting 30s..."
-            sleep 30
-          done
-          echo "Warning: Timed out waiting for PyPI, proceeding anyway..."
-
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
-          context: ./docker
+          context: .
           file: ./docker/Dockerfile
           platforms: linux/amd64,linux/arm64
           push: true
