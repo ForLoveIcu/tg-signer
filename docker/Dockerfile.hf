@@ -1,0 +1,35 @@
+FROM python:3.12-slim-bookworm AS builder
+
+RUN apt-get update && apt-get install -y gcc && \
+    mkdir -p build && \
+    pip wheel -w build tgcrypto
+
+FROM python:3.12-slim
+
+ARG TZ=Asia/Shanghai
+ENV TZ=${TZ}
+ENV DEBIAN_FRONTEND=noninteractive
+COPY --from=builder /build/*.whl /tmp/
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends tzdata && \
+    ln -snf /usr/share/zoneinfo/${TZ} /etc/localtime && \
+    echo ${TZ} > /etc/timezone && \
+    rm -rf /var/lib/apt/lists/*
+
+# Create non-root user (required by HF Spaces)
+RUN useradd -m -u 1000 user
+USER user
+ENV HOME=/home/user
+ENV PATH="/home/user/.local/bin:${PATH}"
+
+COPY --chown=user . /src
+RUN pip install --user /tmp/*.whl && \
+    pip install --user "/src[speedup,gui]" psycopg2-binary && \
+    rm -rf /src
+
+WORKDIR /home/user/app
+
+EXPOSE 7860
+
+CMD ["tg-signer", "--workdir", ".signer", "--session_dir", ".", "--in-memory", "webgui", "-H", "0.0.0.0", "-P", "7860"]

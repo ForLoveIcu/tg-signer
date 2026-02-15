@@ -152,6 +152,12 @@ def tg_signer(
     from tg_signer.logger import configure_logger
 
     logger = configure_logger(log_level=log_level, log_dir=log_dir, log_file=log_file)
+
+    # Initialize file sync with PostgreSQL if DATABASE_URL is set
+    from tg_signer.storage import init_file_sync
+
+    init_file_sync()
+
     ctx.ensure_object(dict)
     proxy = get_proxy(proxy)
     if ctx.invoked_subcommand in [

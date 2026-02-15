@@ -42,6 +42,9 @@ speedup = [
 gui = [
     "nicegui"
 ]
+db = [
+    "psycopg2-binary"
+]
 
 [project.urls]
 Homepage = "https://github.com/amchii/tg-signer"
