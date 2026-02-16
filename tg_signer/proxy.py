@@ -27,12 +27,27 @@ def fetch_subscription(url: str, timeout: int = 15) -> str:
     req = request.Request(url, headers={"User-Agent": "ClashForAndroid/2.5"})
     with request.urlopen(req, timeout=timeout) as resp:
         raw = resp.read()
-    # Try base64 decode
+
+    text = raw.decode("utf-8", errors="ignore").strip()
+    logger.info("Subscription raw length: %d chars", len(text))
+
+    # If it already looks like protocol URIs, return as-is
+    if any(text.startswith(p) for p in ("ss://", "vless://", "vmess://", "trojan://")):
+        return text
+
+    # Try base64 decode (remove whitespace/newlines from base64 block)
     try:
-        decoded = base64.b64decode(raw).decode("utf-8", errors="ignore")
+        clean = text.replace("\r", "").replace("\n", "").replace(" ", "")
+        # Fix padding
+        padding = 4 - len(clean) % 4
+        if padding != 4:
+            clean += "=" * padding
+        decoded = base64.b64decode(clean).decode("utf-8", errors="ignore")
+        logger.info("Decoded subscription: %d chars, first 100: %s", len(decoded), decoded[:100])
         return decoded
-    except Exception:
-        return raw.decode("utf-8", errors="ignore")
+    except Exception as e:
+        logger.warning("Base64 decode failed: %s, returning raw text", e)
+        return text
 
 
 def parse_subscription(raw: str) -> List[Dict]:
@@ -45,6 +60,9 @@ def parse_subscription(raw: str) -> List[Dict]:
         node = _parse_uri(line)
         if node:
             nodes.append(node)
+        else:
+            logger.debug("Skipped unrecognized line: %s", line[:80])
+    logger.info("Parsed %d nodes from subscription", len(nodes))
     return nodes
 
 
