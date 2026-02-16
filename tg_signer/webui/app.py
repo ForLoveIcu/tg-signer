@@ -557,6 +557,168 @@ def _apply_paths(workdir_input, on_refresh: Callable[[], None]) -> None:
     on_refresh()
 
 
+def _build_proxy_panel() -> None:
+    """Build the proxy settings panel inside the proxy tab."""
+    from tg_signer.proxy import (
+        LOCAL_SOCKS_ADDR,
+        fetch_subscription,
+        is_xray_running,
+        parse_subscription,
+        start_xray,
+        stop_xray,
+    )
+
+    nodes_list = []  # Store parsed nodes
+
+    ui.label("代理设置").classes("text-lg font-semibold")
+    ui.label(
+        "输入 Clash/V2ray 订阅链接，解析代理节点并启动本地 SOCKS5 代理，"
+        "用于 Telegram 连接。"
+    ).classes("text-sm text-gray-500 mb-2")
+
+    # Status display
+    with ui.row().classes("items-center gap-2 mb-2"):
+        status_icon = ui.icon("circle", color="red").classes("text-lg")
+        status_text = ui.label("代理未运行").classes("text-sm")
+
+    def update_status():
+        if is_xray_running():
+            status_icon.props("color=green")
+            status_text.text = f"代理运行中: {LOCAL_SOCKS_ADDR}"
+        else:
+            status_icon.props("color=red")
+            status_text.text = "代理未运行"
+        status_icon.update()
+        status_text.update()
+
+    # Subscription URL input
+    sub_url = ui.input(
+        label="订阅链接 (Clash/V2ray base64)",
+        placeholder="https://example.com/api/v1/client/subscribe?token=...",
+    ).props("outlined dense").classes("w-full")
+
+    # Node list
+    node_container = ui.column().classes("w-full gap-1")
+    selected_node_idx = {"value": None}
+
+    async def fetch_nodes():
+        url = (sub_url.value or "").strip()
+        if not url:
+            ui.notify("请输入订阅链接", type="warning")
+            return
+        ui.notify("正在获取订阅...", type="info")
+        try:
+            import asyncio
+
+            raw = await asyncio.get_event_loop().run_in_executor(
+                None, fetch_subscription, url
+            )
+            parsed = parse_subscription(raw)
+            nodes_list.clear()
+            nodes_list.extend(parsed)
+            selected_node_idx["value"] = None
+
+            node_container.clear()
+            with node_container:
+                if not parsed:
+                    ui.label("未解析到代理节点").classes("text-gray-500")
+                    return
+
+                ui.label(f"共 {len(parsed)} 个节点").classes(
+                    "text-sm text-gray-500"
+                )
+
+                for i, node in enumerate(parsed):
+                    name = node.get("name", f"节点 {i + 1}")
+                    proto = node.get("protocol", "?")
+                    host = node.get("host", "?")
+                    port = node.get("port", "?")
+                    label = f"[{proto}] {name} ({host}:{port})"
+
+                    with ui.row().classes(
+                        "items-center w-full gap-2 p-1 rounded hover:bg-gray-100"
+                    ):
+                        ui.radio(
+                            options={i: ""},
+                            value=selected_node_idx.get("value"),
+                            on_change=lambda e, idx=i: _select_node(idx),
+                        )
+                        ui.label(label).classes("text-sm flex-grow")
+
+            ui.notify(f"解析到 {len(parsed)} 个节点", type="positive")
+
+        except Exception as e:
+            ui.notify(f"获取订阅失败: {e}", type="negative")
+
+    def _select_node(idx: int):
+        selected_node_idx["value"] = idx
+
+    async def start_proxy():
+        idx = selected_node_idx.get("value")
+        if idx is None:
+            ui.notify("请先选择一个代理节点", type="warning")
+            return
+        if idx >= len(nodes_list):
+            ui.notify("节点索引无效，请重新选择", type="warning")
+            return
+
+        node = nodes_list[idx]
+        ui.notify(f"正在启动代理: {node.get('name', '')}...", type="info")
+
+        import asyncio
+
+        ok, msg = await asyncio.get_event_loop().run_in_executor(
+            None, start_xray, node
+        )
+        if ok:
+            ui.notify(msg, type="positive")
+        else:
+            ui.notify(msg, type="negative")
+        update_status()
+
+    def stop_proxy():
+        msg = stop_xray()
+        ui.notify(msg, type="info")
+        update_status()
+
+    with ui.row().classes("gap-2 mt-2"):
+        ui.button("获取订阅", icon="download", on_click=fetch_nodes).props(
+            "color=primary"
+        )
+        ui.button("启动代理", icon="play_arrow", on_click=start_proxy).props(
+            "color=positive"
+        )
+        ui.button("停止代理", icon="stop", on_click=stop_proxy).props(
+            "color=negative outline"
+        )
+        ui.button("刷新状态", icon="refresh", on_click=update_status).props(
+            "flat"
+        )
+
+    # Manual proxy input
+    ui.separator().classes("my-3")
+    ui.label("或直接设置代理").classes("text-md font-semibold")
+    with ui.row().classes("items-end w-full gap-2"):
+        manual_proxy = ui.input(
+            label="代理地址",
+            placeholder="socks5://127.0.0.1:10808 或 http://ip:port",
+            value=os.environ.get("TG_PROXY", ""),
+        ).props("outlined dense").classes("flex-grow")
+
+        def apply_manual():
+            val = (manual_proxy.value or "").strip()
+            if val:
+                os.environ["TG_PROXY"] = val
+                ui.notify(f"代理已设置: {val}", type="positive")
+            else:
+                os.environ.pop("TG_PROXY", None)
+                ui.notify("代理已清除", type="info")
+
+        ui.button("应用", on_click=apply_manual).props("color=primary")
+
+    update_status()
+
+
 def _build_dashboard(container) -> None:
     with container:
         ui.label("TG Signer Web 控制台").classes(
@@ -576,6 +738,7 @@ def _build_dashboard(container) -> None:
             tab_users = ui.tab("用户信息")
             tab_records = ui.tab("签到记录")
             tab_logs = ui.tab("日志")
+            tab_proxy = ui.tab("代理设置")
 
         def goto_records(task_name: str) -> None:
             tabs.value = tab_records
@@ -612,6 +775,9 @@ def _build_dashboard(container) -> None:
             with ui.tab_panel(tab_logs):
                 ui.label("查看日志文件的最新行。").classes("text-gray-600")
                 refreshers.append(log_block())
+
+            with ui.tab_panel(tab_proxy):
+                _build_proxy_panel()
 
         refresh_all()
 
