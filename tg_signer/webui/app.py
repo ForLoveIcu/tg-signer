@@ -294,10 +294,20 @@ class MonitorBlock(BaseConfigBlock):
 def user_info_block() -> Callable[[], None]:
     container = ui.column().classes("w-full gap-2")
 
+    def open_login():
+        from tg_signer.webui.login import TelegramLoginDialog
+
+        TelegramLoginDialog(
+            session_dir=".", workdir=str(state.workdir), on_complete=refresh
+        )
+
     def refresh() -> None:
         container.clear()
         entries = load_user_infos(state.workdir)
         with container:
+            ui.button("登录新账号", icon="login", on_click=open_login).props(
+                "color=primary"
+            )
             if not entries:
                 ui.label("未找到用户信息").classes("text-gray-500")
                 return
